@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShareMonitor - Máy Chiếu Cửa Sổ</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+    }
+    body {
+      background-color: #000;
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* Vùng nhận diện di chuột ở mép trên cùng */
+    #top-hover-zone {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 30px;
+      z-index: 20;
+    }
+
+    /* Thanh điều khiển mini nổi */
+    #controls {
+      position: fixed;
+      top: 15px;
+      z-index: 30;
+      background: rgba(20, 20, 24, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+      padding: 6px 14px;
+      border-radius: 30px;
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    /* Trạng thái ẩn hoàn toàn khi đang chiếu */
+    #controls.hidden {
+      transform: translateY(-80px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      border: none;
+      border-radius: 20px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn-primary {
+      background: #2563eb;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #3b82f6;
+    }
+    .btn-stop {
+      background: rgba(220, 38, 38, 0.85);
+      color: white;
+      display: none;
+      padding: 5px 12px;
+      font-size: 12px;
+    }
+    .btn-stop:hover {
+      background: #dc2626;
+    }
+    .btn-icon {
+      background: rgba(255, 255, 255, 0.1);
+      color: #e4e4e7;
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+    .btn-icon:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .hint {
+      font-size: 11px;
+      color: #a1a1aa;
+    }
+
+    video {
+      width: 100vw;
+      height: 100vh;
+      object-fit: contain;
+      background: #000;
+      cursor: pointer;
+      image-rendering: auto;
+    }
+
+    /* Màn hình chờ khi chưa chọn app */
+    #empty-state {
+      position: absolute;
+      text-align: center;
+      color: #71717a;
+      pointer-events: none;
+    }
+    #empty-state svg {
+      width: 60px;
+      height: 60px;
+      margin-bottom: 12px;
+      opacity: 0.4;
+    }
+    #empty-state p {
+      font-size: 14px;
+      color: #a1a1aa;
+    }
+  </style>
+</head>
+<body>
+  <div id="top-hover-zone"></div>
+
+  <div id="controls">
+    <button id="startBtn" class="btn btn-primary">
+      <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v10H4V6zm18-2H2c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h20c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"/></svg>
+      Chọn Cửa Sổ Chiếu
+    </button>
+    <button id="stopBtn" class="btn btn-stop">
+      ⏹ Dừng Chiếu
+    </button>
+    <button id="fsBtn" class="btn btn-icon" title="Toàn màn hình (F)">⛶ Fullscreen</button>
+    <span id="hintText" class="hint">(Click màn hình để ẩn/hiện thanh này)</span>
+  </div>
+
+  <div id="empty-state">
+    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM5 15h14v3H5z"/></svg>
+    <p>Bấm nút trên để bắt đầu chiếu cửa sổ</p>
+  </div>
+
+  <video id="view" autoplay playsinline muted></video>
+
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const fsBtn = document.getElementById('fsBtn');
+    const video = document.getElementById('view');
+    const controls = document.getElementById('controls');
+    const emptyState = document.getElementById('empty-state');
+    const topHoverZone = document.getElementById('top-hover-zone');
+    const hintText = document.getElementById('hintText');
+    let currentStream = null;
+    let autoHideTimer = null;
+
+    function showControlsBriefly(ms = 3000) {
+      clearTimeout(autoHideTimer);
+      controls.classList.remove('hidden');
+      if (currentStream && ms > 0) {
+        autoHideTimer = setTimeout(() => {
+          controls.classList.add('hidden');
+        }, ms);
+      }
+    }
+
+    function toggleControls() {
+      if (!currentStream) return;
+      if (controls.classList.contains('hidden')) {
+        showControlsBriefly(3000);
+      } else {
+        clearTimeout(autoHideTimer);
+        controls.classList.add('hidden');
+      }
+    }
+
+    async function startCapture() {
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            width: { ideal: 3840, max: 3840 },
+            height: { ideal: 2160, max: 2160 },
+            frameRate: { ideal: 60, max: 60 },
+            cursor: "always"
+          },
+          audio: false
+        });
+
+        // Bật chế độ tối ưu độ nét từng nét chữ/code (chống mờ văn bản trong WebRTC)
+        const track = stream.getVideoTracks()[0];
+        if (track && 'contentHint' in track) {
+          track.contentHint = 'text'; // 'text' buộc bộ nén giữ nguyên độ nét viền chữ
+        }
+
+        currentStream = stream;
+        video.srcObject = stream;
+        emptyState.style.display = 'none';
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-flex';
+        hintText.style.display = 'none';
+
+        // Tự động ẩn thanh điều khiển sau 1.5 giây khi bắt đầu chiếu
+        showControlsBriefly(1500);
+
+        track.onended = () => {
+          stopCapture();
+        };
+      } catch (err) {
+        console.warn("Huỷ chọn hoặc lỗi:", err);
+      }
+    }
+
+    function stopCapture() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+      }
+      video.srcObject = null;
+      emptyState.style.display = 'block';
+      startBtn.style.display = 'inline-flex';
+      stopBtn.style.display = 'none';
+      hintText.style.display = 'inline';
+      clearTimeout(autoHideTimer);
+      controls.classList.remove('hidden');
+    }
+
+    startBtn.onclick = startCapture;
+    stopBtn.onclick = stopCapture;
+
+    // 1. Click vào màn hình video -> Bật/Tắt thanh điều khiển
+    let clickTimeout = null;
+    video.onclick = (e) => {
+      if (clickTimeout) return;
+      clickTimeout = setTimeout(() => {
+        toggleControls();
+        clickTimeout = null;
+      }, 250); // Chờ 250ms để phân biệt với đúp chuột (Double click)
+    };
+
+    // 2. Đúp chuột (Double Click) -> Bật/Tắt Fullscreen
+    const toggleFullscreen = () => {
+      clearTimeout(clickTimeout);
+      clickTimeout = null;
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+    video.ondblclick = toggleFullscreen;
+    fsBtn.onclick = toggleFullscreen;
+
+    // 3. Rê chuột lên sát mép trên cùng (Top zone) -> Hiện thanh điều khiển
+    topHoverZone.onmouseenter = () => {
+      if (currentStream) showControlsBriefly(3000);
+    };
+    controls.onmouseenter = () => {
+      clearTimeout(autoHideTimer);
+    };
+    controls.onmouseleave = () => {
+      if (currentStream) showControlsBriefly(1500);
+    };
+
+    // Phím tắt
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+      if (e.key === ' ') {
+        e.preventDefault();
+        toggleControls();
+      }
+      if (e.key === 'Escape' && document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+  </script>
+</body>
+</html>
