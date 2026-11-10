@@ -39,15 +39,15 @@
       position: fixed;
       top: 15px;
       z-index: 30;
-      background: rgba(20, 20, 24, 0.85);
-      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(20, 20, 24, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.18);
       box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
       padding: 6px 14px;
       border-radius: 30px;
       backdrop-filter: blur(12px);
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
       transform: translateY(0);
       opacity: 1;
@@ -88,6 +88,16 @@
     }
     .btn-stop:hover {
       background: #dc2626;
+    }
+    .btn-pip {
+      background: rgba(16, 185, 129, 0.85);
+      color: white;
+      display: none;
+      padding: 5px 12px;
+      font-size: 12px;
+    }
+    .btn-pip:hover {
+      background: #10b981;
     }
     .btn-icon {
       background: rgba(255, 255, 255, 0.1);
@@ -139,11 +149,14 @@
       <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v10H4V6zm18-2H2c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h20c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"/></svg>
       Chọn Cửa Sổ Chiếu
     </button>
+    <button id="pipBtn" class="btn btn-pip" title="Thu nhỏ góc màn hình chính để giám sát (P)">
+      📺 Xem Góc Màn Hình (PiP)
+    </button>
     <button id="stopBtn" class="btn btn-stop">
       ⏹ Dừng Chiếu
     </button>
-    <button id="fsBtn" class="btn btn-icon" title="Toàn màn hình (F)">⛶ Fullscreen</button>
-    <span id="hintText" class="hint">(Click màn hình để ẩn/hiện thanh này)</span>
+    <button id="fsBtn" class="btn btn-icon" title="Toàn màn hình (F)">⛶ Toàn Màn Hình</button>
+    <span id="hintText" class="hint">(Phím F: Fullscreen | P: Màn hình góc PiP)</span>
   </div>
 
   <div id="empty-state">
@@ -156,6 +169,7 @@
   <script>
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
+    const pipBtn = document.getElementById('pipBtn');
     const fsBtn = document.getElementById('fsBtn');
     const video = document.getElementById('view');
     const controls = document.getElementById('controls');
@@ -197,10 +211,10 @@
           audio: false
         });
 
-        // Bật chế độ tối ưu độ nét từng nét chữ/code (chống mờ văn bản trong WebRTC)
+        // Bật chế độ tối ưu độ nét từng nét chữ/code
         const track = stream.getVideoTracks()[0];
         if (track && 'contentHint' in track) {
-          track.contentHint = 'text'; // 'text' buộc bộ nén giữ nguyên độ nét viền chữ
+          track.contentHint = 'text';
         }
 
         currentStream = stream;
@@ -208,9 +222,9 @@
         emptyState.style.display = 'none';
         startBtn.style.display = 'none';
         stopBtn.style.display = 'inline-flex';
+        pipBtn.style.display = 'inline-flex';
         hintText.style.display = 'none';
 
-        // Tự động ẩn thanh điều khiển sau 1.5 giây khi bắt đầu chiếu
         showControlsBriefly(1500);
 
         track.onended = () => {
@@ -222,6 +236,9 @@
     }
 
     function stopCapture() {
+      if (document.pictureInPictureElement) {
+        document.exitPictureInPicture().catch(() => {});
+      }
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
         currentStream = null;
@@ -230,13 +247,28 @@
       emptyState.style.display = 'block';
       startBtn.style.display = 'inline-flex';
       stopBtn.style.display = 'none';
+      pipBtn.style.display = 'none';
       hintText.style.display = 'inline';
       clearTimeout(autoHideTimer);
       controls.classList.remove('hidden');
     }
 
+    async function togglePiP() {
+      if (!video.srcObject) return;
+      try {
+        if (document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
+        } else {
+          await video.requestPictureInPicture();
+        }
+      } catch (err) {
+        console.warn("Lỗi Picture-in-Picture:", err);
+      }
+    }
+
     startBtn.onclick = startCapture;
     stopBtn.onclick = stopCapture;
+    pipBtn.onclick = togglePiP;
 
     // 1. Click vào màn hình video -> Bật/Tắt thanh điều khiển
     let clickTimeout = null;
@@ -245,7 +277,7 @@
       clickTimeout = setTimeout(() => {
         toggleControls();
         clickTimeout = null;
-      }, 250); // Chờ 250ms để phân biệt với đúp chuột (Double click)
+      }, 250);
     };
 
     // 2. Đúp chuột (Double Click) -> Bật/Tắt Fullscreen
@@ -275,6 +307,7 @@
     // Phím tắt
     window.addEventListener('keydown', (e) => {
       if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+      if (e.key === 'p' || e.key === 'P') togglePiP();
       if (e.key === ' ') {
         e.preventDefault();
         toggleControls();
