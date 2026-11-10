@@ -113,13 +113,25 @@
       color: #a1a1aa;
     }
 
-    video {
+    /* Video chính trên màn hình */
+    #view {
       width: 100vw;
       height: 100vh;
       object-fit: contain;
       background: #000;
       cursor: pointer;
       image-rendering: auto;
+    }
+
+    /* Video phụ ẩn dùng riêng cho Picture-in-Picture để màn hình chính và phụ cùng xem đồng thời */
+    #pip-video {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+      top: -9999px;
+      left: -9999px;
     }
 
     /* Màn hình chờ khi chưa chọn app */
@@ -150,7 +162,7 @@
       Chọn Cửa Sổ Chiếu
     </button>
     <button id="pipBtn" class="btn btn-pip" title="Thu nhỏ góc màn hình chính để giám sát (P)">
-      📺 Xem Góc Màn Hình (PiP)
+      📺 Giám Sát Góc (PiP)
     </button>
     <button id="stopBtn" class="btn btn-stop">
       ⏹ Dừng Chiếu
@@ -164,7 +176,11 @@
     <p>Bấm nút trên để bắt đầu chiếu cửa sổ</p>
   </div>
 
+  <!-- Video chiếu chính ở màn hình ngoài -->
   <video id="view" autoplay playsinline muted></video>
+
+  <!-- Video clone chạy song song dành riêng cho PiP màn hình chính -->
+  <video id="pip-video" autoplay playsinline muted></video>
 
   <script>
     const startBtn = document.getElementById('startBtn');
@@ -172,6 +188,7 @@
     const pipBtn = document.getElementById('pipBtn');
     const fsBtn = document.getElementById('fsBtn');
     const video = document.getElementById('view');
+    const pipVideo = document.getElementById('pip-video');
     const controls = document.getElementById('controls');
     const emptyState = document.getElementById('empty-state');
     const topHoverZone = document.getElementById('top-hover-zone');
@@ -219,6 +236,9 @@
 
         currentStream = stream;
         video.srcObject = stream;
+        // Nhân bản stream sang pip-video để cả 2 màn hình cùng phát đồng thời
+        pipVideo.srcObject = stream.clone();
+
         emptyState.style.display = 'none';
         startBtn.style.display = 'none';
         stopBtn.style.display = 'inline-flex';
@@ -243,6 +263,10 @@
         currentStream.getTracks().forEach(track => track.stop());
         currentStream = null;
       }
+      if (pipVideo.srcObject) {
+        pipVideo.srcObject.getTracks().forEach(track => track.stop());
+        pipVideo.srcObject = null;
+      }
       video.srcObject = null;
       emptyState.style.display = 'block';
       startBtn.style.display = 'inline-flex';
@@ -254,12 +278,13 @@
     }
 
     async function togglePiP() {
-      if (!video.srcObject) return;
+      if (!currentStream) return;
       try {
         if (document.pictureInPictureElement) {
           await document.exitPictureInPicture();
         } else {
-          await video.requestPictureInPicture();
+          // Bật PiP trên video phụ để video chính ở màn hình ngoài KHÔNG bị đen!
+          await pipVideo.requestPictureInPicture();
         }
       } catch (err) {
         console.warn("Lỗi Picture-in-Picture:", err);
