@@ -24,7 +24,6 @@
       width: 100vw;
     }
 
-    /* Vùng nhận diện di chuột ở mép trên cùng */
     #top-hover-zone {
       position: fixed;
       top: 0;
@@ -34,7 +33,6 @@
       z-index: 20;
     }
 
-    /* Thanh điều khiển mini nổi */
     #controls {
       position: fixed;
       top: 15px;
@@ -53,7 +51,6 @@
       opacity: 1;
     }
 
-    /* Trạng thái ẩn hoàn toàn khi đang chiếu */
     #controls.hidden {
       transform: translateY(-80px);
       opacity: 0;
@@ -113,33 +110,34 @@
       color: #a1a1aa;
     }
 
-    /* Video chính trên màn hình */
-    #view {
+    /* Màn hình chiếu chính (Canvas) - Luôn hiển thị nét căng, KHÔNG BAO GIỜ bị đen khi bật PiP */
+    #viewCanvas {
       width: 100vw;
       height: 100vh;
       object-fit: contain;
       background: #000;
       cursor: pointer;
-      image-rendering: auto;
+      display: block;
     }
 
-    /* Video phụ ẩn dùng riêng cho Picture-in-Picture để màn hình chính và phụ cùng xem đồng thời */
-    #pip-video {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      opacity: 0;
+    /* Video nguồn ngầm để vẽ lên Canvas và phục vụ PiP */
+    #hiddenVideo {
+      position: fixed;
+      bottom: 0;
+      right: 0;
+      width: 160px;
+      height: 90px;
+      opacity: 0.001;
       pointer-events: none;
-      top: -9999px;
-      left: -9999px;
+      z-index: -1;
     }
 
-    /* Màn hình chờ khi chưa chọn app */
     #empty-state {
       position: absolute;
       text-align: center;
       color: #71717a;
       pointer-events: none;
+      z-index: 10;
     }
     #empty-state svg {
       width: 60px;
@@ -176,25 +174,38 @@
     <p>Bấm nút trên để bắt đầu chiếu cửa sổ</p>
   </div>
 
-  <!-- Video chiếu chính ở màn hình ngoài -->
-  <video id="view" autoplay playsinline muted></video>
+  <!-- Canvas hiển thị chính ở màn hình bên kia: Bất biến, không bao giờ bị đen -->
+  <canvas id="viewCanvas"></canvas>
 
-  <!-- Video clone chạy song song dành riêng cho PiP màn hình chính -->
-  <video id="pip-video" autoplay playsinline muted></video>
+  <!-- Video nguồn ẩn: Dùng để trích xuất hình ảnh ra PiP -->
+  <video id="hiddenVideo" autoplay playsinline muted></video>
 
   <script>
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const pipBtn = document.getElementById('pipBtn');
     const fsBtn = document.getElementById('fsBtn');
-    const video = document.getElementById('view');
-    const pipVideo = document.getElementById('pip-video');
+    const canvas = document.getElementById('viewCanvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const video = document.getElementById('hiddenVideo');
     const controls = document.getElementById('controls');
     const emptyState = document.getElementById('empty-state');
     const topHoverZone = document.getElementById('top-hover-zone');
     const hintText = document.getElementById('hintText');
     let currentStream = null;
     let autoHideTimer = null;
+    let animId = null;
+
+    function renderLoop() {
+      if (video.readyState >= 2 && video.videoWidth > 0) {
+        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+        }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }
+      animId = requestAnimationFrame(renderLoop);
+    }
 
     function showControlsBriefly(ms = 3000) {
       clearTimeout(autoHideTimer);
@@ -228,7 +239,6 @@
           audio: false
         });
 
-        // Bật chế độ tối ưu độ nét từng nét chữ/code
         const track = stream.getVideoTracks()[0];
         if (track && 'contentHint' in track) {
           track.contentHint = 'text';
@@ -236,14 +246,17 @@
 
         currentStream = stream;
         video.srcObject = stream;
-        // Nhân bản stream sang pip-video để cả 2 màn hình cùng phát đồng thời
-        pipVideo.srcObject = stream.clone();
+        await video.play();
 
         emptyState.style.display = 'none';
         startBtn.style.display = 'none';
         stopBtn.style.display = 'inline-flex';
         pipBtn.style.display = 'inline-flex';
         hintText.style.display = 'none';
+
+        // Bắt đầu vòng lặp render canvas siêu mượt 60fps
+        cancelAnimationFrame(animId);
+        renderLoop();
 
         showControlsBriefly(1500);
 
@@ -256,6 +269,7 @@
     }
 
     function stopCapture() {
+      cancelAnimationFrame(animId);
       if (document.pictureInPictureElement) {
         document.exitPictureInPicture().catch(() => {});
       }
@@ -263,11 +277,8 @@
         currentStream.getTracks().forEach(track => track.stop());
         currentStream = null;
       }
-      if (pipVideo.srcObject) {
-        pipVideo.srcObject.getTracks().forEach(track => track.stop());
-        pipVideo.srcObject = null;
-      }
       video.srcObject = null;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       emptyState.style.display = 'block';
       startBtn.style.display = 'inline-flex';
       stopBtn.style.display = 'none';
@@ -283,8 +294,7 @@
         if (document.pictureInPictureElement) {
           await document.exitPictureInPicture();
         } else {
-          // Bật PiP trên video phụ để video chính ở màn hình ngoài KHÔNG bị đen!
-          await pipVideo.requestPictureInPicture();
+          await video.requestPictureInPicture();
         }
       } catch (err) {
         console.warn("Lỗi Picture-in-Picture:", err);
@@ -295,9 +305,9 @@
     stopBtn.onclick = stopCapture;
     pipBtn.onclick = togglePiP;
 
-    // 1. Click vào màn hình video -> Bật/Tắt thanh điều khiển
+    // 1. Click vào màn hình canvas -> Bật/Tắt thanh điều khiển
     let clickTimeout = null;
-    video.onclick = (e) => {
+    canvas.onclick = (e) => {
       if (clickTimeout) return;
       clickTimeout = setTimeout(() => {
         toggleControls();
@@ -315,7 +325,7 @@
         document.exitFullscreen().catch(() => {});
       }
     };
-    video.ondblclick = toggleFullscreen;
+    canvas.ondblclick = toggleFullscreen;
     fsBtn.onclick = toggleFullscreen;
 
     // 3. Rê chuột lên sát mép trên cùng (Top zone) -> Hiện thanh điều khiển
