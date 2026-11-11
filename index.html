@@ -76,6 +76,16 @@
     .btn-primary:hover {
       background: #3b82f6;
     }
+    .btn-switch {
+      background: rgba(245, 158, 11, 0.85);
+      color: white;
+      display: none;
+      padding: 5px 12px;
+      font-size: 12px;
+    }
+    .btn-switch:hover {
+      background: #f59e0b;
+    }
     .btn-stop {
       background: rgba(220, 38, 38, 0.85);
       color: white;
@@ -110,7 +120,7 @@
       color: #a1a1aa;
     }
 
-    /* Màn hình chiếu chính (Canvas) - Luôn hiển thị nét căng, KHÔNG BAO GIỜ bị đen khi bật PiP */
+    /* Màn hình chiếu chính (Canvas) */
     #viewCanvas {
       width: 100vw;
       height: 100vh;
@@ -120,7 +130,6 @@
       display: block;
     }
 
-    /* Video nguồn ngầm để vẽ lên Canvas và phục vụ PiP */
     #hiddenVideo {
       position: fixed;
       bottom: 0;
@@ -159,6 +168,9 @@
       <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v10H4V6zm18-2H2c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h20c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"/></svg>
       Chọn Cửa Sổ Chiếu
     </button>
+    <button id="switchBtn" class="btn btn-switch" title="Đổi sang cửa sổ hoặc màn hình khác (S)">
+      🔄 Đổi Nguồn Chiếu
+    </button>
     <button id="pipBtn" class="btn btn-pip" title="Thu nhỏ góc màn hình chính để giám sát (P)">
       📺 Giám Sát Góc (PiP)
     </button>
@@ -174,14 +186,12 @@
     <p>Bấm nút trên để bắt đầu chiếu cửa sổ</p>
   </div>
 
-  <!-- Canvas hiển thị chính ở màn hình bên kia: Bất biến, không bao giờ bị đen -->
   <canvas id="viewCanvas"></canvas>
-
-  <!-- Video nguồn ẩn: Dùng để trích xuất hình ảnh ra PiP -->
   <video id="hiddenVideo" autoplay playsinline muted></video>
 
   <script>
     const startBtn = document.getElementById('startBtn');
+    const switchBtn = document.getElementById('switchBtn');
     const stopBtn = document.getElementById('stopBtn');
     const pipBtn = document.getElementById('pipBtn');
     const fsBtn = document.getElementById('fsBtn');
@@ -195,6 +205,7 @@
     let currentStream = null;
     let autoHideTimer = null;
     let animId = null;
+    let pipWindow = null;
 
     function renderLoop() {
       if (video.readyState >= 2 && video.videoWidth > 0) {
@@ -244,17 +255,22 @@
           track.contentHint = 'text';
         }
 
+        // Dọn luồng cũ nếu có
+        if (currentStream) {
+          currentStream.getTracks().forEach(t => t.stop());
+        }
+
         currentStream = stream;
         video.srcObject = stream;
         await video.play();
 
         emptyState.style.display = 'none';
         startBtn.style.display = 'none';
+        switchBtn.style.display = 'inline-flex';
         stopBtn.style.display = 'inline-flex';
         pipBtn.style.display = 'inline-flex';
         hintText.style.display = 'none';
 
-        // Bắt đầu vòng lặp render canvas siêu mượt 60fps
         cancelAnimationFrame(animId);
         renderLoop();
 
@@ -270,7 +286,10 @@
 
     function stopCapture() {
       cancelAnimationFrame(animId);
-      if (document.pictureInPictureElement) {
+      if (pipWindow && !pipWindow.closed) {
+        pipWindow.close();
+        pipWindow = null;
+      } else if (document.pictureInPictureElement) {
         document.exitPictureInPicture().catch(() => {});
       }
       if (currentStream) {
@@ -281,6 +300,7 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       emptyState.style.display = 'block';
       startBtn.style.display = 'inline-flex';
+      switchBtn.style.display = 'none';
       stopBtn.style.display = 'none';
       pipBtn.style.display = 'none';
       hintText.style.display = 'inline';
@@ -288,8 +308,84 @@
       controls.classList.remove('hidden');
     }
 
+    // Mở cửa sổ nhỏ PiP có sẵn nút Đổi Nguồn Chiếu ngay bên trong
     async function togglePiP() {
       if (!currentStream) return;
+
+      // Ưu tiên Document Picture-in-Picture API (Chrome 116+) có UI điều khiển
+      if ('documentPictureInPicture' in window) {
+        try {
+          if (pipWindow && !pipWindow.closed) {
+            pipWindow.close();
+            pipWindow = null;
+            return;
+          }
+
+          pipWindow = await window.documentPictureInPicture.requestWindow({
+            width: 380,
+            height: 250
+          });
+
+          pipWindow.document.body.innerHTML = `
+            <style>
+              * { margin:0; padding:0; box-sizing:border-box; }
+              body { background:#0a0a0c; color:#fff; font-family:system-ui,sans-serif; overflow:hidden; display:flex; flex-direction:column; height:100vh; }
+              .header { display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:rgba(24,24,27,0.95); border-bottom:1px solid rgba(255,255,255,0.1); z-index:10; }
+              .title { font-size:11px; font-weight:600; color:#a1a1aa; }
+              .btn-switch { background:#f59e0b; color:#fff; border:none; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; }
+              .btn-switch:hover { background:#d97706; }
+              .btn-stop { background:#dc2626; color:#fff; border:none; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:600; cursor:pointer; }
+              .btn-stop:hover { background:#b91c1c; }
+              .video-box { flex:1; display:flex; align-items:center; justify-content:center; background:#000; position:relative; }
+              canvas { width:100%; height:100%; object-fit:contain; }
+            </style>
+            <div class="header">
+              <span class="title">📺 Giám Sát Màn Hình Phụ</span>
+              <div style="display:flex; gap:6px;">
+                <button id="pipSwitchBtn" class="btn-switch">🔄 Đổi Nguồn</button>
+                <button id="pipStopBtn" class="btn-stop">⏹</button>
+              </div>
+            </div>
+            <div class="video-box">
+              <canvas id="pipCanvas"></canvas>
+            </div>
+          `;
+
+          const pipCanvas = pipWindow.document.getElementById('pipCanvas');
+          const pipCtx = pipCanvas.getContext('2d', { alpha: false });
+          const pipSwitchBtn = pipWindow.document.getElementById('pipSwitchBtn');
+          const pipStopBtn = pipWindow.document.getElementById('pipStopBtn');
+
+          function renderPip() {
+            if (!pipWindow || pipWindow.closed) return;
+            if (video.readyState >= 2 && video.videoWidth > 0) {
+              if (pipCanvas.width !== video.videoWidth || pipCanvas.height !== video.videoHeight) {
+                pipCanvas.width = video.videoWidth;
+                pipCanvas.height = video.videoHeight;
+              }
+              pipCtx.drawImage(video, 0, 0, pipCanvas.width, pipCanvas.height);
+            }
+            pipWindow.requestAnimationFrame(renderPip);
+          }
+          renderPip();
+
+          pipSwitchBtn.onclick = () => {
+            startCapture();
+          };
+          pipStopBtn.onclick = () => {
+            stopCapture();
+          };
+
+          pipWindow.addEventListener('pagehide', () => {
+            pipWindow = null;
+          });
+          return;
+        } catch (err) {
+          console.warn("Doc PiP fallback sang standard PiP:", err);
+        }
+      }
+
+      // Fallback: Standard HTML5 Video PiP
       try {
         if (document.pictureInPictureElement) {
           await document.exitPictureInPicture();
@@ -302,6 +398,7 @@
     }
 
     startBtn.onclick = startCapture;
+    switchBtn.onclick = startCapture;
     stopBtn.onclick = stopCapture;
     pipBtn.onclick = togglePiP;
 
@@ -343,6 +440,7 @@
     window.addEventListener('keydown', (e) => {
       if (e.key === 'f' || e.key === 'F') toggleFullscreen();
       if (e.key === 'p' || e.key === 'P') togglePiP();
+      if (e.key === 's' || e.key === 'S') startCapture();
       if (e.key === ' ') {
         e.preventDefault();
         toggleControls();
