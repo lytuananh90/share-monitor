@@ -206,6 +206,7 @@
     let autoHideTimer = null;
     let animId = null;
     let pipWindow = null;
+    let wasFullscreen = false;
 
     function renderLoop() {
       if (video.readyState >= 2 && video.videoWidth > 0) {
@@ -239,6 +240,9 @@
     }
 
     async function startCapture() {
+      // Lưu lại trạng thái fullscreen trước khi bật hộp thoại chọn nguồn
+      wasFullscreen = Boolean(document.fullscreenElement);
+
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
@@ -276,11 +280,20 @@
 
         showControlsBriefly(1500);
 
+        // Tự động khôi phục lại chế độ Fullscreen nếu trước đó đang xem toàn màn hình
+        if (wasFullscreen && !document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+
         track.onended = () => {
           stopCapture();
         };
       } catch (err) {
         console.warn("Huỷ chọn hoặc lỗi:", err);
+        // Nếu người dùng bấm huỷ mà trước đó đang Fullscreen thì cũng giữ nguyên
+        if (wasFullscreen && !document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
       }
     }
 
@@ -308,11 +321,9 @@
       controls.classList.remove('hidden');
     }
 
-    // Mở cửa sổ nhỏ PiP có sẵn nút Đổi Nguồn Chiếu ngay bên trong
     async function togglePiP() {
       if (!currentStream) return;
 
-      // Ưu tiên Document Picture-in-Picture API (Chrome 116+) có UI điều khiển
       if ('documentPictureInPicture' in window) {
         try {
           if (pipWindow && !pipWindow.closed) {
