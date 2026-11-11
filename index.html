@@ -239,8 +239,15 @@
       }
     }
 
+    const toggleFullscreen = () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+
     async function startCapture() {
-      // Lưu lại trạng thái fullscreen trước khi bật hộp thoại chọn nguồn
       wasFullscreen = Boolean(document.fullscreenElement);
 
       try {
@@ -259,7 +266,6 @@
           track.contentHint = 'text';
         }
 
-        // Dọn luồng cũ nếu có
         if (currentStream) {
           currentStream.getTracks().forEach(t => t.stop());
         }
@@ -280,7 +286,6 @@
 
         showControlsBriefly(1500);
 
-        // Tự động khôi phục lại chế độ Fullscreen nếu trước đó đang xem toàn màn hình
         if (wasFullscreen && !document.fullscreenElement) {
           document.documentElement.requestFullscreen().catch(() => {});
         }
@@ -290,7 +295,6 @@
         };
       } catch (err) {
         console.warn("Huỷ chọn hoặc lỗi:", err);
-        // Nếu người dùng bấm huỷ mà trước đó đang Fullscreen thì cũng giữ nguyên
         if (wasFullscreen && !document.fullscreenElement) {
           document.documentElement.requestFullscreen().catch(() => {});
         }
@@ -333,8 +337,8 @@
           }
 
           pipWindow = await window.documentPictureInPicture.requestWindow({
-            width: 380,
-            height: 250
+            width: 420,
+            height: 270
           });
 
           pipWindow.document.body.innerHTML = `
@@ -343,18 +347,22 @@
               body { background:#0a0a0c; color:#fff; font-family:system-ui,sans-serif; overflow:hidden; display:flex; flex-direction:column; height:100vh; }
               .header { display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:rgba(24,24,27,0.95); border-bottom:1px solid rgba(255,255,255,0.1); z-index:10; }
               .title { font-size:11px; font-weight:600; color:#a1a1aa; }
-              .btn-switch { background:#f59e0b; color:#fff; border:none; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; }
+              .btn-action { color:#fff; border:none; padding:4px 9px; border-radius:12px; font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; }
+              .btn-switch { background:#f59e0b; }
               .btn-switch:hover { background:#d97706; }
-              .btn-stop { background:#dc2626; color:#fff; border:none; padding:4px 8px; border-radius:12px; font-size:11px; font-weight:600; cursor:pointer; }
+              .btn-fs { background:rgba(255,255,255,0.15); }
+              .btn-fs:hover { background:rgba(255,255,255,0.25); }
+              .btn-stop { background:#dc2626; padding:4px 8px; }
               .btn-stop:hover { background:#b91c1c; }
               .video-box { flex:1; display:flex; align-items:center; justify-content:center; background:#000; position:relative; }
               canvas { width:100%; height:100%; object-fit:contain; }
             </style>
             <div class="header">
-              <span class="title">📺 Giám Sát Màn Hình Phụ</span>
-              <div style="display:flex; gap:6px;">
-                <button id="pipSwitchBtn" class="btn-switch">🔄 Đổi Nguồn</button>
-                <button id="pipStopBtn" class="btn-stop">⏹</button>
+              <span class="title">📺 Giám Sát</span>
+              <div style="display:flex; gap:5px; align-items:center;">
+                <button id="pipSwitchBtn" class="btn-action btn-switch" title="Đổi cửa sổ chiếu">🔄 Đổi Nguồn</button>
+                <button id="pipFsBtn" class="btn-action btn-fs" title="Bật/Tắt Toàn Màn Hình bên kia">⛶ Fullscreen</button>
+                <button id="pipStopBtn" class="btn-action btn-stop" title="Dừng chiếu">⏹</button>
               </div>
             </div>
             <div class="video-box">
@@ -365,6 +373,7 @@
           const pipCanvas = pipWindow.document.getElementById('pipCanvas');
           const pipCtx = pipCanvas.getContext('2d', { alpha: false });
           const pipSwitchBtn = pipWindow.document.getElementById('pipSwitchBtn');
+          const pipFsBtn = pipWindow.document.getElementById('pipFsBtn');
           const pipStopBtn = pipWindow.document.getElementById('pipStopBtn');
 
           function renderPip() {
@@ -382,6 +391,9 @@
 
           pipSwitchBtn.onclick = () => {
             startCapture();
+          };
+          pipFsBtn.onclick = () => {
+            toggleFullscreen();
           };
           pipStopBtn.onclick = () => {
             stopCapture();
@@ -424,15 +436,6 @@
     };
 
     // 2. Đúp chuột (Double Click) -> Bật/Tắt Fullscreen
-    const toggleFullscreen = () => {
-      clearTimeout(clickTimeout);
-      clickTimeout = null;
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      } else {
-        document.exitFullscreen().catch(() => {});
-      }
-    };
     canvas.ondblclick = toggleFullscreen;
     fsBtn.onclick = toggleFullscreen;
 
