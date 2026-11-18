@@ -390,10 +390,29 @@
           renderPip();
 
           pipSwitchBtn.onclick = () => {
+            window.focus();
             startCapture();
           };
-          pipFsBtn.onclick = () => {
-            toggleFullscreen();
+          pipFsBtn.onclick = async () => {
+            window.focus();
+            try {
+              if (!document.fullscreenElement) {
+                await document.documentElement.requestFullscreen();
+              } else {
+                await document.exitFullscreen();
+              }
+            } catch (err) {
+              console.warn("Fullscreen toggle error:", err);
+              // Fallback: nếu browser chặn requestFullscreen chéo cửa sổ, chuyển focus sang tab chính và thử lại
+              window.focus();
+              setTimeout(() => {
+                if (!document.fullscreenElement) {
+                  document.documentElement.requestFullscreen().catch(e => console.warn(e));
+                } else {
+                  document.exitFullscreen().catch(e => console.warn(e));
+                }
+              }, 100);
+            }
           };
           pipStopBtn.onclick = () => {
             stopCapture();
